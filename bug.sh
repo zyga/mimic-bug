@@ -1,4 +1,5 @@
-#!/bin/sh -e
+#!/bin/bash -e
+trap 'printf "\nDUPA\n"' ERR
 case "${1:-}" in
 	'')
 		test -e bug-snap_1_all.snap || snap pack bug-snap
@@ -13,6 +14,7 @@ case "${1:-}" in
 		# This allows to re-run this script without significant problems.
 		mkdir -p /bug
 		mount -t tmpfs none /bug
+		mount --make-shared /bug
 		trap 'umount --lazy /bug && rmdir /bug' EXIT
 		# Create private (unshared) space for preserved mount namespaces.  This
 		# directory is prepared in a way similar to /run/snapd/ns. The files
@@ -36,8 +38,9 @@ case "${1:-}" in
 		# synchronization amongst the three interacting processes.
 	    mkdir /bug/sync	
 		# We are ready, let's examine the namespace.
-		echo "hello from $ns"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		echo "hello from $ns (before mimic)"
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		tail -n 3 /proc/self/mountinfo
 		# NOTE: propagation unchanged is to explicitly encode propagation
 		# changes. Similarly, snap-confine does not globally change
 		# propagation.
@@ -45,34 +48,37 @@ case "${1:-}" in
 		# Wait for the ns:snap process and wrap up.
 		wait
 		echo "hello from $ns (after mimic)"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 4
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 4
+		tail -n 4 /proc/self/mountinfo
 		echo "wrapping up $ns"
 		;;
 	ns:snap)
 		ns=ns:snap
 		mount --make-slave /bug
-		mount --make-slave /bug/mimic
+		mount --make-shared /bug/mimic
 		echo "hello from $ns (before mimic)"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		tail -n 3 /proc/self/mountinfo
 		unshare --mount=/bug/ns/user --propagation unchanged "$0" ns:user > ns-user.log &
 		# Wait for the process inside ns:user to indicate readiness.
 		while test ! -e /bug/sync/ns-user-ready; do sleep 0.1; done
 		# Construct the writable mimic now.
 		mkdir -p /bug/tmp/.snap/mimic
 		mount --bind /bug/mimic /bug/tmp/.snap/mimic
-		mount -t tmpfs none /bug/mimic/
+		mount -t tmpfs mimic /bug/mimic/
 		touch /bug/mimic/file
 		mkdir /bug/mimic/dir
 		mkdir /bug/mimic/meta
-		mount --bind /bug/tmp/.snap/mimic/file /bug/mimic/file
-		mount --bind /bug/tmp/.snap/mimic/dir /bug/mimic/dir
-		mount --bind /bug/tmp/.snap/mimic/meta /bug/mimic/meta
-		umount --detach /bug/tmp/.snap/mimic
+		mount --bind  /bug/tmp/.snap/mimic/file /bug/mimic/file
+		mount --bind  /bug/tmp/.snap/mimic/dir /bug/mimic/dir
+		mount --bind  /bug/tmp/.snap/mimic/meta /bug/mimic/meta
+		umount --lazy /bug/tmp/.snap/mimic
 		# Indicate that the mimic has been constructed.
 		touch /bug/sync/mimic-ready
 		# Show the mount table again.
 		echo "hello from $ns (after mimic)"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 8
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 8
+		tail -n 8 /proc/self/mountinfo
 		# Wait for the ns:user process and wrap up.
 		wait
 		echo "wrapping up $ns"
@@ -82,13 +88,15 @@ case "${1:-}" in
 		mount --make-slave /bug
 		mount --make-slave /bug/mimic
 		touch /bug/sync/ns-user-ready
-		echo "hello from $ns"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		echo "hello from $ns (before mimic)"
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		tail -n 3 /proc/self/mountinfo
 		# Wait for the process inside ns:snap to indicate mimic has been constructed.
 		while test ! -e /bug/sync/mimic-ready; do sleep 0.1; done
 		# Show the mount table again.
 		echo "hello from $ns (after mimic)"
-		findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		# findmnt --pairs -o+PROPAGATION,ID | tail -n 3
+		tail -n 3 /proc/self/mountinfo
 		# Wrap up and quit.
 		echo "wrapping up $ns"
 		;;
