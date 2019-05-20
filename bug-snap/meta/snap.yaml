@@ -1,0 +1,4 @@
+name: bug-snap
+version: 1
+summary: fake snap to construct mimic over
+architectures: [all]
